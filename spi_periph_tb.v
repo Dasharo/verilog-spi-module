@@ -36,14 +36,14 @@ module spi_periph_tb ();
       clk_en = 1;
       // Bits are always transferred from msb to lsb
       // First bit can be driven on falling CS, falling CLK or any arbitrary moment
-      mosi = in[0];
+      mosi = in[7];
       // Handle last bit separately, clk_en must be flipped before last cycle
       for (bit=0; bit<7; bit=bit+1) begin
-        @(posedge clk) out[bit] = miso;
-        @(negedge clk) mosi = in[bit+1];
+        @(posedge clk) out[7-bit] = miso;
+        @(negedge clk) mosi = in[6-bit];
       end
       clk_en = 0;
-      @(posedge clk) out[7] = miso;
+      @(posedge clk) out[0] = miso;
       @(negedge clk) mosi = 1'bz;
       if (scatter_bytes)
         #150;
