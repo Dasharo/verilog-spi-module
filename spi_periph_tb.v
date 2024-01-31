@@ -201,21 +201,21 @@ module spi_periph_tb ();
 
     // Perform write with delay
     $display("Performing TPM write with delay");
-    delay = 10;
+    delay = 500;
     expected_data = 8'h42;
     tpm_write_reg_1B (16'h9C39, expected_data);
 
-    delay = 10;
+    delay = 500;
     expected_data = 32'h942E17F3;
     tpm_write_reg_4B (16'hC98C, expected_data);
 
     // Perform read with delay
     $display("Performing TPM read with delay");
-    delay = 10;
+    delay = 500;
     periph_data = 8'hA5;
     tpm_read_reg_1B (16'hFF00, expected_data);
 
-    delay = 10;
+    delay = 500;
     periph_data = 32'hFA005735;
     tpm_read_reg_4B (16'hF0F0, expected_data);
 
@@ -242,7 +242,7 @@ module spi_periph_tb ();
   // Simulate response to read and write requests with optional delay
   always @(posedge spi_data_wr) begin
     periph_data = {spi_data_o, periph_data[31:8]};
-    #(delay * 150) spi_wr_done = 1;
+    #(delay) spi_wr_done = 1;
     // No delays between bytes on SPI
     delay = 0;
   end
@@ -252,8 +252,8 @@ module spi_periph_tb ();
   end
 
   always @(posedge spi_data_req) begin
-    #(delay * 150) spi_data_rd = 1;
-    spi_data_i = periph_data[7:0];
+    #(delay) spi_data_i = periph_data[7:0];
+    spi_data_rd = 1;
     periph_data = {8'h00, periph_data[31:8]};
     // No delays between bytes on SPI
     delay = 0;
