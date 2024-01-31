@@ -126,21 +126,25 @@ module spi_periph_tb ();
   endtask
 
   task tpm_read_reg_4B (input [15:0] addr, output [31:0] data);
+    reg [31:0] expected;
     begin
+      expected = periph_data;
       spi_read_reg (4, {8'hD4, addr}, data);
-      if (data !== periph_data)
-        $display("### Read failed, expected %8h, got %8h @ %t", periph_data, data, $realtime);
+      if (data !== expected)
+        $display("### Read failed, expected %8h, got %8h @ %t", expected, data, $realtime);
       #50;
     end
   endtask
 
   task tpm_read_reg_1B (input [15:0] addr, output [7:0] data);
+    reg [7:0] expected;
     reg [31:0] tmp;
     begin
+      expected = periph_data[7:0];
       spi_read_reg (1, {8'hD4, addr}, tmp);
       data = tmp[7:0];
-      if (data !== periph_data[31:24])
-        $display("### Read failed, expected %2h, got %2h @ %t", periph_data[31:24], data, $realtime);
+      if (data !== expected)
+        $display("### Read failed, expected %2h, got %2h @ %t", expected, data, $realtime);
       #50;
     end
   endtask
