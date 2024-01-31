@@ -212,7 +212,7 @@ module spi_periph_tb ();
     // Perform read with delay
     $display("Performing TPM read with delay");
     delay = 10;
-    periph_data = {8'hA5, 24'h000000};
+    periph_data = 8'hA5;
     tpm_read_reg_1B (16'hFF00, expected_data);
 
     delay = 10;
@@ -221,7 +221,7 @@ module spi_periph_tb ();
 
     // Perform read without delay
     $display("Performing TPM read w/o delay");
-    periph_data = {8'h7E, 24'h000000};
+    periph_data = 8'h7E;
     tpm_read_reg_1B (16'hF00F, expected_data);
 
     periph_data = 32'h0712E8B0;
