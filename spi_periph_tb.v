@@ -86,7 +86,7 @@ module spi_periph_tb ();
       // Address, last read byte specifies if wait state is inserted
       spi_addr (addr, tmp);
 
-      // Handle wait states
+      // Handle wait states using logical equality - avoid halting on 1'bz
       while (tmp[0] != 1'b1)
         spi_xfer_byte (8'hFF, tmp);
 
@@ -128,7 +128,7 @@ module spi_periph_tb ();
   task tpm_read_reg_4B (input [15:0] addr, output [31:0] data);
     begin
       spi_read_reg (4, {8'hD4, addr}, data);
-      if (data != periph_data)
+      if (data !== periph_data)
         $display("### Read failed, expected %8h, got %8h @ %t", periph_data, data, $realtime);
       #50;
     end
@@ -139,7 +139,7 @@ module spi_periph_tb ();
     begin
       spi_read_reg (1, {8'hD4, addr}, tmp);
       data = tmp[7:0];
-      if (data != periph_data[31:24])
+      if (data !== periph_data[31:24])
         $display("### Read failed, expected %2h, got %2h @ %t", periph_data[31:24], data, $realtime);
       #50;
     end
@@ -148,7 +148,7 @@ module spi_periph_tb ();
   task tpm_write_reg_4B (input [15:0] addr, input [31:0] data);
     begin
       spi_write_reg (4, {8'hD4, addr}, data);
-      if (periph_data != data)
+      if (periph_data !== data)
         $display("### Write failed, expected %8h, got %8h @ %t", data, periph_data, $realtime);
       #50;
     end
@@ -157,7 +157,7 @@ module spi_periph_tb ();
   task tpm_write_reg_1B (input [15:0] addr, input [7:0] data);
     begin
       spi_write_reg (1, {8'hD4, addr}, {{24{1'b0}}, data});
-      if (periph_data[31:24] != data)
+      if (periph_data[31:24] !== data)
         $display("### Write failed, expected %2h, got %2h @ %t", data, periph_data[31:24], $realtime);
       #50;
     end
