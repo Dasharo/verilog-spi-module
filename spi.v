@@ -4,14 +4,13 @@
 
 `timescale 1 ns / 1 ps
 
-`define ST_IDLE           0
-`define ST_D_S            1
-`define ST_ADDR1          2
-`define ST_ADDR2          3
-`define ST_ADDR3          4
-`define ST_WAIT           5
-`define ST_WRITE          6
-`define ST_READ           7
+`define ST_D_S            0
+`define ST_ADDR1          1
+`define ST_ADDR2          2
+`define ST_ADDR3          3
+`define ST_WAIT           4
+`define ST_WRITE          5
+`define ST_READ           6
 
 module spi_periph (
   clk_i,
@@ -49,63 +48,68 @@ module spi_periph (
   reg  [ 1:0] size;
   reg  [ 7:0] byte;
   reg         direction;
+  reg         mask_cs;
+  wire        effective_cs;
   // verilog_format: on
 
-  initial state = `ST_IDLE;
+  initial state = `ST_D_S;
   initial data_wr = 1'b0;
   initial data_req = 1'b0;
+  initial mask_cs = 1'b0;
+
+  assign effective_cs = cs | mask_cs;
 
   // Drive on falling edge
-  always @(negedge clk_i or negedge cs) begin
-    if (cs == 1'b1) begin
+  always @(negedge clk_i or negedge effective_cs) begin
+    if (effective_cs == 1'b1) begin
       miso <= 1'bz;
-      bit_counter <= 0;
-      size <= 0;
     end else begin
       case (state)
-        `ST_IDLE: begin
-          miso <= 1'bz;
-          bit_counter <= 3'd7;
-          data_req <= 0;    // Here or posedge?
-          data_wr <= 0;     // Here or posedge?
-        end
         `ST_D_S: begin
-          bit_counter <= bit_counter - 3'd1;
           miso <= 1'bz;
         end
         `ST_ADDR1: begin
-          bit_counter <= bit_counter - 3'd1;
           miso <= 1'bz;
         end
         `ST_ADDR2: begin
-          bit_counter <= bit_counter - 3'd1;
           miso <= 1'bz;
         end
         `ST_ADDR3: begin
-          bit_counter <= bit_counter - 3'd1;
-          // Insert wait state for reads
+          // Always insert wait state for reads
           miso <= !direction;
         end
         `ST_WRITE: begin
-          bit_counter <= bit_counter - 3'd1;
           miso <= 1'b1;
+        end
+        `ST_WAIT: begin
+          miso <= 1'b0;
+          if (data_rd === 1'b1) begin
+            // No more wait cycles
+            miso <= 1'b1;
+          end
+        end
+        `ST_READ: begin
+          miso <= byte[bit_counter];
         end
       endcase
     end
   end
 
   // Sample on rising edge
-  // XXX: Should posedge cs also be in sensitivity list?
-  always @(posedge clk_i) begin
+  always @(posedge clk_i or posedge cs) begin
     if (cs == 1'b1) begin
-      state <= `ST_IDLE;
+      mask_cs <= 1'b0;
+      state <= `ST_D_S;
+      data_req <= 1'b0;
+      data_wr <= 1'b0;
+      size <= 2'd0;
+      bit_counter <= 3'd7;
     end else begin
+      bit_counter <= bit_counter - 3'd1;
       case (state)
-        `ST_IDLE: begin
-          size <= 0;
-          state <= `ST_D_S;
-        end
         `ST_D_S: begin
+          data_req <= 0;
+          data_wr <= 0;
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             direction <= byte[7];
@@ -119,7 +123,11 @@ module spi_periph (
           if (bit_counter === 3'd0) begin
             if ({byte[7:1], mosi} === 8'hD4) begin
               state <= `ST_ADDR2;
-            end // else TODO
+            end else begin
+              // Pretend we're not the receiver of this transaction
+              mask_cs <= 1'b1;
+              state <= `ST_D_S;
+            end
           end
         end
         `ST_ADDR2: begin
@@ -133,8 +141,11 @@ module spi_periph (
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             addr_o[7:0] <= {byte[7:1], mosi};
-            // TODO: read
-            state <= `ST_WRITE;
+            if (direction) begin
+              state <= `ST_WAIT;
+            end else begin
+              state <= `ST_WRITE;
+            end
           end
         end
         `ST_WRITE: begin
@@ -145,8 +156,42 @@ module spi_periph (
             data_wr <= 1'b1;
             size <= size - 2'd1;
             state <= `ST_WRITE;
-            if (size === 2'd0)
-              state <= `ST_IDLE;
+            if (size === 2'd0) begin
+              // Mask CS to hide implicit 9th edge caused by CS transition
+              mask_cs <= 1'b1;
+              state <= `ST_D_S;
+            end
+          end
+        end
+        `ST_WAIT: begin
+          if (bit_counter === 3'd7) begin
+              data_req <= 1'b1;
+          end
+          data_wr <= 1'b0;
+          byte <= data_i;
+          // Check miso instead of data_rd, it may arrive between negedge and here
+          if (bit_counter === 3'd0 && miso === 1'b1) begin
+            data_req <= 1'b0;
+            //size <= size - 2'd1;
+            state <= `ST_READ;
+          end
+        end
+        `ST_READ: begin
+          // Don't fetch data past last byte, some reads have side effects!
+          if (bit_counter === 3'd7 && size !== 2'd0) begin
+              data_req <= 1'b1;
+          end
+          data_wr <= 1'b0;
+          if (bit_counter === 3'd0) begin
+            byte <= data_i;
+            data_req <= 1'b0;
+            size <= size - 2'd1;
+            state <= `ST_READ;
+            if (size === 2'd0) begin
+              // Mask CS to hide implicit 9th edge caused by CS transition
+              mask_cs <= 1'b1;
+              state <= `ST_D_S;
+            end
           end
         end
       endcase
