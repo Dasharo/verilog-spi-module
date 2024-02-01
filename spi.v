@@ -59,6 +59,36 @@ module spi_periph (
 
   assign effective_cs = cs | mask_cs;
 
+  // "If the transaction crosses a register boundary, the TPM may choose to
+  //  accept all the data and discard the data that exceeds the size limit for
+  //  that register as long as doing so does not cause a change to the state of
+  //  any adjacent register."
+  // This implementation chooses to trim each access to first 4B boundary higher
+  // than the address. In FIFO TPM interface, there are no multiple smaller
+  // registers in one 4B-aligned chunk of memory space, and there is only one
+  // register that may be bigger than 4B (TPM_HASH_START), although the
+  // specification isn't clear on that. It has 8B allocated in register map,
+  // informative comment in "7.4 SPI Hardware Protocol" says that it is 4B, and
+  // description in "Table 19 - Allocation of Register Space for FIFO TPM
+  // Access" says that "This command SHALL be done on the LPC bus as a single
+  // write to 4028h. Writes to 4029h to 402Fh are not decoded by TPM". To keep
+  // the registers module implementation consistent between LPC and SPI, this
+  // implementation treats TPM_HASH_START as 1B register.
+  //
+  // The following task checks if the access crosses 4B boundary, and when it
+  // does, the size is limited to maximum size that doesn't cross it.
+  task validate_size (input [1:0] addr, input [1:0] size, output [1:0] val_size);
+    reg [2:0] sum;
+    begin
+      sum = addr + size;
+      if (sum >= 3'b100) begin
+        val_size = 2'b11 - addr;
+      end else begin
+        val_size = size;
+      end
+    end
+  endtask
+
   // Drive on falling edge
   always @(negedge clk_i or negedge effective_cs) begin
     if (effective_cs == 1'b1) begin
@@ -145,11 +175,7 @@ module spi_periph (
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             addr_o[7:0] <= {byte[7:1], mosi};
-            // TODO: "If the transaction crosses a register boundary, the TPM
-            //        may choose to accept all the data and discard the data
-            //        that exceeds the size limit for that register as long as
-            //        doing so does not cause a change to the state of any
-            //        adjacent register."
+            validate_size ({byte[1], mosi}, size, size);
             if (direction) begin
               state <= `ST_WAIT;
             end else begin
