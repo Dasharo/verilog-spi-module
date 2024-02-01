@@ -18,6 +18,7 @@ module spi_periph_tb ();
   reg         clk_en;         // SPI clock isn't freerunning
   reg         scatter_bytes;  // Some hosts pause SPI clock between bytes, simulate it
   integer     delay;          // Delay before wr_done/data_rd
+  integer     i, ii;
 
   reg  [ 7:0] spi_data_i;     // Data to be sent (I/O Read) to host
   wire [ 7:0] spi_data_o;     // Data received (I/O Write) from host
@@ -129,7 +130,8 @@ module spi_periph_tb ();
     begin
       expected = periph_data;
       spi_read_reg (4, {8'hD4, addr}, data);
-      if (data !== expected)
+      // Unaligned accesses are checked elsewhere
+      if (addr[1:0] === 2'b00 && data !== expected)
         $display("### Read failed, expected %8h, got %8h @ %t", expected, data, $realtime);
       #50;
     end
@@ -151,7 +153,8 @@ module spi_periph_tb ();
   task tpm_write_reg_4B (input [15:0] addr, input [31:0] data);
     begin
       spi_write_reg (4, {8'hD4, addr}, data);
-      if (periph_data !== data)
+      // Unaligned accesses are checked elsewhere
+      if (addr[1:0] === 2'b00 && periph_data !== data)
         $display("### Write failed, expected %8h, got %8h @ %t", data, periph_data, $realtime);
       #50;
     end
@@ -245,6 +248,8 @@ module spi_periph_tb ();
 
     scatter_bytes = 0;
 
+    #500;
+
     // Test over-sized transfers
     $display("Testing over-sized transfers");
     periph_data = 32'h2E06488B;
@@ -273,6 +278,8 @@ module spi_periph_tb ();
     if (periph_data !== 32'hzzzzzzzz)
       $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
     #50;
+
+    #500;
 
     // Test non-TPM addresses
     $display("Testing non-TPM addresses");
@@ -306,6 +313,36 @@ module spi_periph_tb ();
     if (periph_data !== 32'hzzzzzzzz)
       $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
     #50;
+
+    #500;
+
+    // Test crossing registers boundary
+    $display("Testing crossing registers boundary");
+    for (i = 0; i < 4; i=i+1) begin
+      periph_data = 32'hzzzzzzzz;
+      expected_data = 32'h113C359A;
+      tpm_write_reg_4B (16'h4C40 + i, expected_data);
+      for (ii = 0; ii < i; ii=ii+1)
+        expected_data = {expected_data[23:0], 8'hzz};
+      if (periph_data !== expected_data)
+        $display("### Unaligned write failed, expected %8h, got %8h @ %t", expected_data, periph_data, $realtime);
+    end
+
+    for (i = 0; i < 4; i=i+1) begin
+      expected_data = 32'hzzzzzzzz;
+      periph_data = 32'h98DF5C9A;
+      tpm_read_reg_4B (16'h0010 + i, expected_data);
+      // Recreate data destroyed by tpm_read_reg_4B()
+      periph_data = 32'h98DF5C9A;
+      periph_data = periph_data << 8*i;
+      for (ii = 0; ii < i; ii=ii+1)
+        periph_data = {8'hzz, periph_data[31:8]};
+      if (periph_data !== expected_data)
+        $display("### Unaligned read failed, expected %8h, got %8h @ %t", periph_data, expected_data, $realtime);
+    end
+
+    periph_data = 32'h0712E8B0;
+    tpm_read_reg_4B (16'h0002, expected_data);
 
     #3000;
     //------------------------------
