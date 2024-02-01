@@ -97,14 +97,14 @@ module spi_periph (
 
   // Sample on rising edge
   always @(posedge clk_i or posedge cs) begin
-    if (cs == 1'b1) begin
+    if (cs === 1'b1) begin
       mask_cs <= 1'b0;
       state <= `ST_D_S;
       data_req <= 1'b0;
       data_wr <= 1'b0;
       size <= 2'd0;
       bit_counter <= 3'd7;
-    end else begin
+    end else if (effective_cs === 1'b0) begin
       bit_counter <= bit_counter - 3'd1;
       case (state)
         `ST_D_S: begin
@@ -113,9 +113,13 @@ module spi_periph (
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             direction <= byte[7];
-            // TODO: handle oversized transfers
             size <= {byte[1], mosi};
             state <= `ST_ADDR1;
+            // Handle over-sized transfers and reserved bit
+            if (|byte[6:2] !== 1'b0) begin
+              mask_cs <= 1'b1;
+              state <= `ST_D_S;
+            end
           end
         end
         `ST_ADDR1: begin
@@ -141,6 +145,11 @@ module spi_periph (
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             addr_o[7:0] <= {byte[7:1], mosi};
+            // TODO: "If the transaction crosses a register boundary, the TPM
+            //        may choose to accept all the data and discard the data
+            //        that exceeds the size limit for that register as long as
+            //        doing so does not cause a change to the state of any
+            //        adjacent register."
             if (direction) begin
               state <= `ST_WAIT;
             end else begin
