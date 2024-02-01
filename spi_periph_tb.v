@@ -66,7 +66,10 @@ module spi_periph_tb ();
     begin
       for (ii=1; ii<=size; ii=ii+1) begin
         // Data is transferred from LSB to MSB
-        spi_xfer_byte (in[8*ii-1 -: 8], out[8*ii-1 -: 8]);
+        // Note: `in` uses modulo arithmetic, `out` doesn't. This way we never
+        // send invalid data, but we want to capture first output bytes to test
+        // for over-sized transfers.
+        spi_xfer_byte (in[(8*ii-1)%32 -: 8], out[8*ii-1 -: 8]);
       end
     end
   endtask
@@ -242,7 +245,7 @@ module spi_periph_tb ();
 
     scatter_bytes = 0;
 
-    // Test oversized transfers
+    // Test over-sized transfers
     $display("Testing over-sized transfers");
     periph_data = 32'h2E06488B;
     spi_read_reg (7, {24'hD43210}, expected_data);
@@ -260,7 +263,6 @@ module spi_periph_tb ();
     periph_data = 32'hzzzzzzzz;
     expected_data = 32'hE197F423;
     spi_write_reg (5, {24'hD40532}, expected_data);
-    // There should be a pull-up, but we must distinguish 0xFF from no response
     if (periph_data !== 32'hzzzzzzzz)
       $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
     #50;
@@ -272,7 +274,38 @@ module spi_periph_tb ();
       $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
     #50;
 
-    // TODO: test non-TPM addresses
+    // Test non-TPM addresses
+    $display("Testing non-TPM addresses");
+    expected_data = 32'hzzzzzzzz;
+    periph_data = 8'h8A;
+    spi_read_reg (1, {24'h003210}, expected_data);
+    // There should be a pull-up, but we must distinguish 0xFF from no response
+    if (expected_data !== 32'hzzzzzzzz)
+      $display("### Read wasn't ignored, expected zzzzzzzz, got %8h @ %t", expected_data, $realtime);
+    #50;
+
+    expected_data = 32'hzzzzzzzz;
+    periph_data = 32'h78B00017;
+    // Note: 80D4 would be valid D/S and ADDR[23:16] bytes
+    spi_read_reg (4, {24'hD080D4}, expected_data);
+    if (expected_data !== 32'hzzzzzzzz)
+      $display("### Read wasn't ignored, expected zzzzzzzz, got %8h @ %t", expected_data, $realtime);
+    #50;
+
+    periph_data = 32'hzzzzzzzz;
+    expected_data = 8'h23;
+    spi_write_reg (1, {24'h054D32}, expected_data);
+    if (periph_data !== 32'hzzzzzzzz)
+      $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
+    #50;
+
+    periph_data = 32'hzzzzzzzz;
+    expected_data = 32'h01234567;
+    // Note: 03D4 would be valid D/S and ADDR[23:16] bytes
+    spi_write_reg (4, {24'h7203D4}, expected_data);
+    if (periph_data !== 32'hzzzzzzzz)
+      $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
+    #50;
 
     #3000;
     //------------------------------
