@@ -71,13 +71,11 @@ module spi_periph_tb ();
     end
   endtask
 
-  // Up to 4 bytes
+  // Up to 4 bytes, not checked to allow testing for over-sized transfers
   task spi_read_reg (input integer size, input [23:0] addr, output [31:0] data);
     reg [5:0] size_encoded;
     reg [7:0] tmp;
     begin
-      if (size > 4)
-        size = 4;
       size_encoded = size[5:0] - 6'd1;
 
       cs = 0;
@@ -96,14 +94,12 @@ module spi_periph_tb ();
     end
   endtask
 
-  // Up to 4 bytes
+  // Up to 4 bytes, not checked to allow testing for over-sized transfers
   task spi_write_reg (input integer size, input [23:0] addr, input [31:0] data);
     reg [5:0] size_encoded;
     reg [7:0] tmp;
     reg [31:0] ignored;
     begin
-      if (size > 4)
-        size = 4;
       size_encoded = size[5:0] - 6'd1;
 
       cs = 0;
@@ -227,9 +223,54 @@ module spi_periph_tb ();
     periph_data = 32'h0712E8B0;
     tpm_read_reg_4B (16'h0000, expected_data);
 
-    #1000;
+    #500;
 
-    // TODO: test with scattered clock
+    // Test with scattered clock
+    scatter_bytes = 1;
+    $display("Testing transfers with scattered clock between bytes");
+    expected_data = 8'h3C;
+    tpm_write_reg_1B (16'hC44C, expected_data);
+
+    expected_data = 32'h113C359A;
+    tpm_write_reg_4B (16'h4C4C, expected_data);
+
+    periph_data = 8'h7E;
+    tpm_read_reg_1B (16'hF00F, expected_data);
+
+    periph_data = 32'h0712E8B0;
+    tpm_read_reg_4B (16'h0000, expected_data);
+
+    scatter_bytes = 0;
+
+    // Test oversized transfers
+    $display("Testing over-sized transfers");
+    periph_data = 32'h2E06488B;
+    spi_read_reg (7, {24'hD43210}, expected_data);
+    // There should be a pull-up, but we must distinguish 0xFF from no response
+    if (expected_data !== 32'hzzzzzzzz)
+      $display("### Read wasn't ignored, expected zzzzzzzz, got %8h @ %t", expected_data, $realtime);
+    #50;
+
+    periph_data = 32'h78B00017;
+    spi_read_reg (8, {24'hD47251}, expected_data);
+    if (expected_data !== 32'hzzzzzzzz)
+      $display("### Read wasn't ignored, expected zzzzzzzz, got %8h @ %t", expected_data, $realtime);
+    #50;
+
+    periph_data = 32'hzzzzzzzz;
+    expected_data = 32'hE197F423;
+    spi_write_reg (5, {24'hD40532}, expected_data);
+    // There should be a pull-up, but we must distinguish 0xFF from no response
+    if (periph_data !== 32'hzzzzzzzz)
+      $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
+    #50;
+
+    periph_data = 32'hzzzzzzzz;
+    expected_data = 32'h01234567;
+    spi_write_reg (12, {24'hD405C0}, expected_data);
+    if (periph_data !== 32'hzzzzzzzz)
+      $display("### Write wasn't dropped, expected zzzzzzzz, got %8h @ %t", periph_data, $realtime);
+    #50;
 
     // TODO: test non-TPM addresses
 
