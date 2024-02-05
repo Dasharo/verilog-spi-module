@@ -9,6 +9,12 @@ basis that isn't used anywhere else. For these reasons, if you're  looking for a
 code for use with SPI flash, sensors, SD cards or other components, this isn't
 the repository you're looking for.
 
+## Module diagram
+
+![Module diagram](spi_module.svg)
+
+Inputs are on the left side, outputs on the right.
+
 ## Funding
 
 This project was partially funded through the
