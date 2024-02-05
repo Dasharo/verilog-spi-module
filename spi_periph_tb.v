@@ -13,7 +13,7 @@ module spi_periph_tb ();
   reg         clk;
   reg         mosi;
   wire        miso;
-  reg         cs;
+  reg         cs_n;
 
   reg         clk_en;         // SPI clock isn't freerunning
   reg         scatter_bytes;  // Some hosts pause SPI clock between bytes, simulate it
@@ -82,7 +82,7 @@ module spi_periph_tb ();
     begin
       size_encoded = size[5:0] - 6'd1;
 
-      cs = 0;
+      cs_n = 0;
       // Command and size
       spi_xfer_byte ({1'b1, 1'b0, size_encoded}, tmp);
       // Address, last read byte specifies if wait state is inserted
@@ -94,7 +94,7 @@ module spi_periph_tb ();
 
       // Get the data
       spi_xfer_n_bytes (size, 32'hFFFFFFFF, data);
-      cs = 1;
+      cs_n = 1;
     end
   endtask
 
@@ -106,7 +106,7 @@ module spi_periph_tb ();
     begin
       size_encoded = size[5:0] - 6'd1;
 
-      cs = 0;
+      cs_n = 0;
       // Command and size
       spi_xfer_byte ({1'b0, 1'b0, size_encoded}, tmp);
       // Address, last read byte specifies if wait state is inserted
@@ -121,7 +121,7 @@ module spi_periph_tb ();
 
       // Send rest of the data
       spi_xfer_n_bytes (size-1, data[31:8], ignored);
-      cs = 1;
+      cs_n = 1;
     end
   endtask
 
@@ -173,7 +173,7 @@ module spi_periph_tb ();
     clk = 0;
     clk_en = 0;
     scatter_bytes = 0;
-    cs = 1;
+    cs_n = 1;
   end
 
   always @(posedge clk_en) begin
@@ -380,7 +380,7 @@ module spi_periph_tb ();
       .clk_i(clk),
       .miso(miso),
       .mosi(mosi),
-      .cs(cs),
+      .cs_n(cs_n),
       // Data provider interface
       .data_i(spi_data_i),
       .data_o(spi_data_o),

@@ -16,7 +16,7 @@ module spi_periph (
   clk_i,
   miso,
   mosi,
-  cs,
+  cs_n,
   data_i,
   data_o,
   addr_o,
@@ -30,7 +30,7 @@ module spi_periph (
   input  wire        clk_i;     // Serial Clock
   output reg         miso;      // Main In Sub Out
   input  wire        mosi;      // Main Out Sub In
-  input  wire        cs;        // Chip Select, active low
+  input  wire        cs_n;      // Chip Select, active low
 
   //# {{Interface to data provider}}
   input  wire [ 7:0] data_i;    // Data to be sent (I/O Read) to host
@@ -57,7 +57,12 @@ module spi_periph (
   initial data_req = 1'b0;
   initial mask_cs = 1'b0;
 
-  assign effective_cs = cs | mask_cs;
+  assign effective_cs = cs_n | mask_cs;
+
+  // Symbolator treats function inputs as module ports until it sees uncommented
+  // 'endmodule' (almost) anywhere before the function, it may even be part of
+  // longer name, so here it is:
+  `undef _________endmodule_________
 
   // "If the transaction crosses a register boundary, the TPM may choose to
   //  accept all the data and discard the data that exceeds the size limit for
@@ -128,8 +133,8 @@ module spi_periph (
   end
 
   // Sample on rising edge
-  always @(posedge clk_i or posedge cs) begin
-    if (cs === 1'b1) begin
+  always @(posedge clk_i or posedge cs_n) begin
+    if (cs_n === 1'b1) begin
       mask_cs <= 1'b0;
       state <= `ST_D_S;
       data_req <= 1'b0;
