@@ -75,19 +75,21 @@ module spi_periph (
   // the registers module implementation consistent between LPC and SPI, this
   // implementation treats TPM_HASH_START as 1B register.
   //
-  // The following task checks if the access crosses 4B boundary, and when it
-  // does, the size is limited to maximum size that doesn't cross it.
-  task validate_size (input [1:0] addr, input [1:0] size, output [1:0] val_size);
+  // The following function checks if the access crosses 4B boundary, and when
+  // it does, the size is limited to maximum size that doesn't cross it.
+  function [1:0] validate_size;
+    input [1:0] addr;
+    input [1:0] size;
     reg [2:0] sum;
     begin
       sum = addr + size;
       if (sum >= 3'b100) begin
-        val_size = 2'b11 - addr;
+        validate_size = 2'b11 - addr;
       end else begin
-        val_size = size;
+        validate_size = size;
       end
     end
-  endtask
+  endfunction
 
   // Drive on falling edge
   always @(negedge clk_i or negedge effective_cs) begin
@@ -175,7 +177,7 @@ module spi_periph (
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             addr_o[7:0] <= {byte[7:1], mosi};
-            validate_size ({byte[1], mosi}, size, size);
+            size <= validate_size ({byte[1], mosi}, size);
             if (direction) begin
               state <= `ST_WAIT;
             end else begin
