@@ -28,7 +28,7 @@ module spi_periph (
   // verilog_format: off  // verible-verilog-format messes up comments alignment
   //# {{SPI interface}}
   input  wire        clk_i;     // Serial Clock
-  output reg         miso;      // Main In Sub Out
+  output wire        miso;      // Main In Sub Out
   input  wire        mosi;      // Main Out Sub In
   input  wire        cs_n;      // Chip Select, active low
 
@@ -50,6 +50,7 @@ module spi_periph (
   reg         direction;
   reg         mask_cs;
   wire        effective_cs;
+  reg         miso_r;
   // verilog_format: on
 
   initial state = `ST_D_S;
@@ -58,6 +59,7 @@ module spi_periph (
   initial mask_cs = 1'b0;
 
   assign effective_cs = cs_n | mask_cs;
+  assign miso = effective_cs ? 1'bz : miso_r;
 
   // Symbolator treats function inputs as module ports until it sees uncommented
   // 'endmodule' (almost) anywhere before the function, it may even be part of
@@ -97,36 +99,34 @@ module spi_periph (
   endfunction
 
   // Drive on falling edge
-  always @(negedge clk_i or negedge effective_cs) begin
-    if (effective_cs == 1'b1) begin
-      miso <= 1'bz;
-    end else begin
+  always @(negedge (clk_i | effective_cs)) begin
+    if (effective_cs == 1'b0) begin
       case (state)
         `ST_D_S: begin
-          miso <= 1'bz;
+          miso_r <= 1'b1;
         end
         `ST_ADDR1: begin
-          miso <= 1'bz;
+          miso_r <= 1'b1;
         end
         `ST_ADDR2: begin
-          miso <= 1'bz;
+          miso_r <= 1'b1;
         end
         `ST_ADDR3: begin
           // Always insert wait state for reads
-          miso <= !direction;
+          miso_r <= !direction;
         end
         `ST_WRITE: begin
-          miso <= 1'b1;
+          miso_r <= 1'b1;
         end
         `ST_WAIT: begin
-          miso <= 1'b0;
+          miso_r <= 1'b0;
           if (data_rd === 1'b1) begin
             // No more wait cycles
-            miso <= 1'b1;
+            miso_r <= 1'b1;
           end
         end
         `ST_READ: begin
-          miso <= byte[bit_counter];
+          miso_r <= byte[bit_counter];
         end
       endcase
     end
@@ -211,8 +211,8 @@ module spi_periph (
           end
           data_wr <= 1'b0;
           byte <= data_i;
-          // Check miso instead of data_rd, it may arrive between negedge and here
-          if (bit_counter === 3'd0 && miso === 1'b1) begin
+          // Check miso_r instead of data_rd, it may arrive between negedge and here
+          if (bit_counter === 3'd0 && miso_r === 1'b1) begin
             data_req <= 1'b0;
             //size <= size - 2'd1;
             state <= `ST_READ;
