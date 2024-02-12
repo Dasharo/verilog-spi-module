@@ -49,7 +49,7 @@ width="460" height="205" viewBox="-99 -20 460.0 205.0" version="1.1">
 <g transform="translate(260,17)">
 <line x1="20" y1="0" x2="0" y2="0" stroke="#000000" fill="none" stroke-width="1"/>
 <text class="fnt2" x="-10" y="0" text-anchor="end" dy="3.5">miso</text>
-<text class="fnt2" x="30" y="0" text-anchor="normal" dy="3.5" style="fill:#969696">reg</text>
+<text class="fnt2" x="30" y="0" text-anchor="normal" dy="3.5" style="fill:#969696">wire</text>
 </g>
 </g>
 <g transform="translate(0,87.0)">
