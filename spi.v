@@ -202,6 +202,8 @@ module spi_periph (
               // Mask CS to hide implicit 9th edge caused by CS transition
               mask_cs <= 1'b1;
               state <= `ST_D_S;
+            end else begin
+              addr_o <= addr_o + 16'd1;
             end
           end
         end
@@ -214,7 +216,7 @@ module spi_periph (
           // Check miso_r instead of data_rd, it may arrive between negedge and here
           if (bit_counter === 3'd0 && miso_r === 1'b1) begin
             data_req <= 1'b0;
-            //size <= size - 2'd1;
+            addr_o <= addr_o + 16'd1;
             state <= `ST_READ;
           end
         end
@@ -228,6 +230,7 @@ module spi_periph (
             byte <= data_i;
             data_req <= 1'b0;
             size <= size - 2'd1;
+            addr_o <= addr_o + 16'd1;
             state <= `ST_READ;
             if (size === 2'd0) begin
               // Mask CS to hide implicit 9th edge caused by CS transition
