@@ -8,9 +8,8 @@
 `define ST_ADDR1          1
 `define ST_ADDR2          2
 `define ST_ADDR3          3
-`define ST_WAIT           4
-`define ST_WRITE          5
-`define ST_READ           6
+`define ST_WRITE          4
+`define ST_READ           5
 
 module spi_periph (
   clk_i,
@@ -36,27 +35,24 @@ module spi_periph (
   input  wire [ 7:0] data_i;    // Data to be sent (I/O Read) to host
   output reg  [ 7:0] data_o;    // Data received (I/O Write) from host
   output reg  [15:0] addr_o;    // 16-bit TPM Register Address
-  output reg         data_wr;   // Signal to data provider that data_o has valid write data
+  output wire        data_wr;   // Signal to data provider that data_o has valid write data
   input  wire        wr_done;   // Signal from data provider that data_o has been read,
                                 // ignored for SPI because there is no inter-byte flow control
   input  wire        data_rd;   // Signal from data provider that data_i has data for read
-  output reg         data_req;  // Signal to data provider that is requested (@posedge) or
+  output wire        data_req;  // Signal to data provider that is requested (@posedge) or
                                 // has been read (@negedge) from data_i
 
   reg  [ 2:0] state;
   reg  [ 2:0] bit_counter;
   reg  [ 1:0] size;
-  reg  [ 7:0] byte;
+  reg  [ 7:0] byte_buf;
   reg         direction;
   reg         mask_cs;
   wire        effective_cs;
   reg         miso_r;
+  reg         data_req_reg;
+  reg         data_wr_reg;
   // verilog_format: on
-
-  initial state = `ST_D_S;
-  initial data_wr = 1'b0;
-  initial data_req = 1'b0;
-  initial mask_cs = 1'b0;
 
   assign effective_cs = cs_n | mask_cs;
   assign miso = effective_cs ? 1'bz : miso_r;
@@ -98,71 +94,75 @@ module spi_periph (
     end
   endfunction
 
+  wire [99:0] buffers_in, buffers_out;
+  assign buffers_in = {buffers_out[98:0], data_req_reg};
+  assign data_req = buffers_out[49];
+
+  LUT4 #(
+	.INIT(16'd2)
+  ) buffers [99:0] (
+	.Z(buffers_out),
+	.A(buffers_in),
+	.B(1'b0),
+	.C(1'b0),
+	.D(1'b0),
+  );
+
+  wire [99:0] wbuffers_in, wbuffers_out;
+  assign wbuffers_in = {wbuffers_out[98:0], data_wr_reg};
+  assign data_wr = wbuffers_out[49];
+
+  LUT4 #(
+	.INIT(16'd2)
+  ) wbuffers [99:0] (
+	.Z(wbuffers_out),
+	.A(wbuffers_in),
+	.B(1'b0),
+	.C(1'b0),
+	.D(1'b0),
+  );
+
   // Drive on falling edge
-  always @(negedge (clk_i | effective_cs)) begin
-    if (effective_cs == 1'b0) begin
-      case (state)
-        `ST_D_S: begin
-          miso_r <= 1'b1;
-        end
-        `ST_ADDR1: begin
-          miso_r <= 1'b1;
-        end
-        `ST_ADDR2: begin
-          miso_r <= 1'b1;
-        end
-        `ST_ADDR3: begin
-          // Always insert wait state for reads
-          miso_r <= !direction;
-        end
-        `ST_WRITE: begin
-          miso_r <= 1'b1;
-        end
-        `ST_WAIT: begin
-          miso_r <= 1'b0;
-          if (data_rd === 1'b1) begin
-            // No more wait cycles
-            miso_r <= 1'b1;
-          end
-        end
-        `ST_READ: begin
-          miso_r <= byte[bit_counter];
-        end
-      endcase
-    end
+  always @(negedge clk_i) begin
+    miso_r <= 1;
+    if (effective_cs == 1'b0 && state == `ST_READ)
+      miso_r <= data_i[bit_counter];
   end
 
   // Sample on rising edge
   always @(posedge clk_i or posedge cs_n) begin
+    data_req_reg <= 1'b0;
+    data_wr_reg <= 1'b0;
+    bit_counter <= 3'd7;
     if (cs_n === 1'b1) begin
       mask_cs <= 1'b0;
       state <= `ST_D_S;
-      data_req <= 1'b0;
-      data_wr <= 1'b0;
+      data_req_reg <= 1'b0;
+      data_wr_reg <= 1'b0;
       size <= 2'd0;
       bit_counter <= 3'd7;
     end else if (effective_cs === 1'b0) begin
       bit_counter <= bit_counter - 3'd1;
       case (state)
         `ST_D_S: begin
-          data_req <= 0;
-          data_wr <= 0;
-          byte[bit_counter] <= mosi;
+          data_req_reg <= 0;
+          data_wr_reg <= 0;
+          byte_buf[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
-            direction <= byte[7];
-            size <= {byte[1], mosi};
+            direction <= byte_buf[7];
+            size <= {byte_buf[1], mosi};
             state <= `ST_ADDR1;
             // Handle over-sized transfers and reserved bit
-            if (|byte[6:2] !== 1'b0) begin
+            if (|byte_buf[6:2] !== 1'b0) begin
               mask_cs <= 1'b1;
               state <= `ST_D_S;
             end
           end
         end
         `ST_ADDR1: begin
-          byte[bit_counter] <= mosi;
+          byte_buf[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
-            if ({byte[7:1], mosi} === 8'hD4) begin
+            if ({byte_buf[7:1], mosi} === 8'hD4) begin
               state <= `ST_ADDR2;
             end else begin
               // Pretend we're not the receiver of this transaction
@@ -172,30 +172,31 @@ module spi_periph (
           end
         end
         `ST_ADDR2: begin
-          byte[bit_counter] <= mosi;
+          byte_buf[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
-            addr_o[15:8] <= {byte[7:1], mosi};
+            addr_o[15:8] <= {byte_buf[7:1], mosi};
             state <= `ST_ADDR3;
           end
         end
         `ST_ADDR3: begin
-          byte[bit_counter] <= mosi;
+          byte_buf[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
-            addr_o[7:0] <= {byte[7:1], mosi};
-            size <= validate_size ({byte[1], mosi}, size);
+            addr_o[7:0] <= {byte_buf[7:1], mosi};
+            size <= validate_size ({byte_buf[1], mosi}, size);
             if (direction) begin
-              state <= `ST_WAIT;
+              data_req_reg <= 1'b1;
+              state <= `ST_READ;
             end else begin
               state <= `ST_WRITE;
             end
           end
         end
         `ST_WRITE: begin
-          byte[bit_counter] <= mosi;
-          data_wr <= 1'b0;
+          byte_buf[bit_counter] <= mosi;
+          data_wr_reg <= 1'b0;
           if (bit_counter === 3'd0) begin
-            data_o <= {byte[7:1], mosi};
-            data_wr <= 1'b1;
+            data_o <= {byte_buf[7:1], mosi};
+            data_wr_reg <= 1'b1;
             size <= size - 2'd1;
             state <= `ST_WRITE;
             if (size === 2'd0) begin
@@ -207,34 +208,22 @@ module spi_periph (
             end
           end
         end
-        `ST_WAIT: begin
-          if (bit_counter === 3'd7) begin
-              data_req <= 1'b1;
-          end
-          data_wr <= 1'b0;
-          byte <= data_i;
-          // Check miso_r instead of data_rd, it may arrive between negedge and here
-          if (bit_counter === 3'd0 && miso_r === 1'b1) begin
-            data_req <= 1'b0;
-            addr_o <= addr_o + 16'd1;
-            state <= `ST_READ;
-          end
-        end
         `ST_READ: begin
-          // Don't fetch data past last byte, some reads have side effects!
-          if (bit_counter === 3'd7 && size !== 2'd0) begin
-              data_req <= 1'b1;
+          data_wr_reg <= 1'b0;
+          if (bit_counter === 3'd1) begin
+            data_req_reg <= 1'b0;
           end
-          data_wr <= 1'b0;
           if (bit_counter === 3'd0) begin
-            byte <= data_i;
-            data_req <= 1'b0;
             size <= size - 2'd1;
-            addr_o <= addr_o + 16'd1;
             state <= `ST_READ;
-            if (size === 2'd0) begin
+            // Don't fetch data past last byte, some reads have side effects!
+            if (size !== 2'd0) begin
+              addr_o <= addr_o + 16'd1;
+              data_req_reg <= 1'b1;
+            end else begin
               // Mask CS to hide implicit 9th edge caused by CS transition
               mask_cs <= 1'b1;
+              data_req_reg <= 1'b0;
               state <= `ST_D_S;
             end
           end
