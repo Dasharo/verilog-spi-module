@@ -146,7 +146,7 @@ module spi_periph (
       case (state)
         `ST_D_S: begin
           data_req <= 0;
-          data_wr <= 0;
+          data_wr <= data_wr & ~wr_done;
           byte[bit_counter] <= mosi;
           if (bit_counter === 3'd0) begin
             direction <= byte[7];
@@ -193,6 +193,7 @@ module spi_periph (
         `ST_WRITE: begin
           byte[bit_counter] <= mosi;
           data_wr <= 1'b0;
+          data_req <= 1'b0;
           if (bit_counter === 3'd0) begin
             data_o <= {byte[7:1], mosi};
             data_wr <= 1'b1;
